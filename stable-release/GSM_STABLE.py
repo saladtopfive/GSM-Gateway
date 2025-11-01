@@ -3,8 +3,8 @@ import serial
 import time
 
 # ==== KONFIGURACJA ====
-PORT = "/dev/ttyUSB2"          # port modemu
-BAUD = 115200                   # prędkość
+PORT = "/dev/ttyUSB2"          
+BAUD = 115200                  
 FORWARD_NUMBER = "+48782335253" # numer, na który przekierowujemy
 
 # ==== FUNKCJE ====
@@ -33,20 +33,18 @@ def main():
     print("🔌 Łączenie z modemem...")
     ser = serial.Serial(PORT, BAUD, timeout=2)
     
-    # Podstawowa konfiguracja modemu
+    
     send_command(ser, "AT", 0.5)
     send_command(ser, "ATE0", 0.2)     # echo off
     send_command(ser, "AT+CLIP=1", 0.2) # pokazywanie caller ID
 
-    # Ustaw przekierowanie
+
     print("📡 Ustawiam przekierowanie bezwarunkowe...")
     set_forward(ser)
 
-    # Sprawdzenie statusu
     print("📡 Status przekierowania:")
     check_status(ser)
 
-    # Program pozostaje w pętli, Ctrl+C do wyłączenia
     try:
         while True:
             time.sleep(1)
