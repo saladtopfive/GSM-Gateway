@@ -93,7 +93,7 @@ def main():
                 status = f"{number}" if number else "Brak"
                 print(f"🕓 {now} | Aktualne przekierowanie: {status}")
 
-            time.sleep(30)
+            time.sleep(60)
 
     except KeyboardInterrupt:
         print("⛔ Wyłączam przekierowanie...")
