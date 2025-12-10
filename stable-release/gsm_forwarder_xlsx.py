@@ -6,13 +6,13 @@ from openpyxl import load_workbook
 import pytz
 import os
 
-# ==== KONFIGURACJA ====
+# ==== CONFIG ====
 PORT = "/dev/ttyUSB2"
 BAUD = 115200
 XLSX_FILE = "schedule.xlsx"
 LOCAL_TZ = pytz.timezone("Europe/Warsaw")
 
-# ==== FUNKCJE POMOCNICZE ====
+# ==== HELP FUNCTIONS  ====
 def send_command(ser, cmd, delay=1):
     """Wysyła komendę AT i zwraca odpowiedź modemu"""
     ser.write((cmd + "\r").encode())
@@ -64,7 +64,7 @@ def find_active_forward(schedule):
             return number, start, end
     return None, None, None
 
-# ==== GŁÓWNY SKRYPT ====
+# ==== MAIN ====
 def main():
     print("🔌 Łączenie z modemem...")
     ser = serial.Serial(PORT, BAUD, timeout=2)
