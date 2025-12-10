@@ -89,3 +89,6 @@ On Ctrl+C:
 - The Excel file must not be open in edit mode — the script needs to read it.
 - All dates and times are interpreted in the `Europe/Warsaw` timezone.
 - Invalid rows in the schedule are skipped with a warning.
+
+## License
+This project is licensed under the MIT permissive license.
