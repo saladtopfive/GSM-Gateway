@@ -14,7 +14,7 @@ Communication with the GSM modem is done via serial port using AT commands.
 This project is **developed and tested on**:
 
 - **Raspberry Pi 5 (8 GB RAM)**
-- **SIMCom 7600E USB LTE Dongle**
+- **SIM7600E-H 4G DONGLE**
 
 The script works reliably on this hardware configuration.  
 Other GSM/LTE modems that support `AT+CCFC` and standard call-control AT commands **should also work**, but they have **not been tested**.
