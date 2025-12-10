@@ -10,6 +10,17 @@ Communication with the GSM modem is done via serial port using AT commands.
 
 ---
 
+## Hardware Compatibility
+This project is **developed and tested on**:
+
+- **Raspberry Pi 5 (8 GB RAM)**
+- **SIMCom 7600E USB LTE Dongle**
+
+The script works reliably on this hardware configuration.  
+Other GSM/LTE modems that support `AT+CCFC` and standard call-control AT commands **should also work**, but they have **not been tested**.
+
+---
+
 ## `schedule.xlsx` structure
 The file must contain headers in row 1 and data starting from row 2:
 
@@ -46,7 +57,7 @@ LOCAL_TZ = pytz.timezone("Europe/Warsaw")
 
 ---
 
-##  Running the script
+## Running the script
 
 ```bash
 python3 forwarder.py
@@ -89,6 +100,8 @@ On Ctrl+C:
 - The Excel file must not be open in edit mode — the script needs to read it.
 - All dates and times are interpreted in the `Europe/Warsaw` timezone.
 - Invalid rows in the schedule are skipped with a warning.
+
+---
 
 ## License
 This project is licensed under the MIT permissive license.
