@@ -8,7 +8,6 @@ If not — it disables call forwarding.
 
 Communication with the GSM modem is done via serial port using AT commands.
 
----
 
 ## Hardware Compatibility
 This project is **developed and tested on**:
@@ -19,7 +18,6 @@ This project is **developed and tested on**:
 The script works reliably on this hardware configuration.  
 Other GSM/LTE modems that support `AT+CCFC` and standard call-control AT commands **should also work**, but they have **not been tested**.
 
----
 
 ## `schedule.xlsx` structure
 The file must contain headers in row 1 and data starting from row 2:
@@ -30,7 +28,6 @@ The file must contain headers in row 1 and data starting from row 2:
 
 Each row defines one active forwarding time window.
 
----
 
 ## Requirements
 - Python 3.7+
@@ -43,7 +40,6 @@ Each row defines one active forwarding time window.
   - `AT+CLIP`
 - Access to `/dev/ttyUSB2` or another configured serial port
 
----
 
 ## Configuration
 Editable parameters are located at the top of the script:
@@ -55,7 +51,6 @@ XLSX_FILE = "schedule.xlsx"
 LOCAL_TZ = pytz.timezone("Europe/Warsaw")
 ```
 
----
 
 ## Running the script
 
@@ -68,8 +63,6 @@ The script will:
 - check the schedule every 60 seconds,
 - automatically enable or disable call forwarding,
 - print all AT commands and modem responses.
-
----
 
 ## Loop logic
 Every minute the script performs:
@@ -87,21 +80,15 @@ Every minute the script performs:
 
 The script remembers the last active number to avoid sending redundant commands.
 
----
-
 ## Stopping the script
 On Ctrl+C:
 - call forwarding is automatically disabled,
 - the serial port is closed safely.
 
----
-
 ## Notes
 - The Excel file must not be open in edit mode — the script needs to read it.
 - All dates and times are interpreted in the `Europe/Warsaw` timezone.
 - Invalid rows in the schedule are skipped with a warning.
-
----
 
 ## License
 This project is licensed under the MIT permissive license.
