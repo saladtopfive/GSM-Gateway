@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Przekierowania GSM</title>
+
+    <link rel="icon" type="image/jpeg" href="/static/kplogoicon.jpg">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="branding">
+    <img src="/static/logokp.jpg" class="corner-logo">
+    <div class="brand-text">DUR AWH</div>
+</div>
+
+<div class="container">
+    <h1>Przekierowania GSM</h1>
+    <p class="subtitle">Panel zarządzania harmonogramem przekierowań</p>
+
+    <div class="status-panel">
+        <h2>Status przekierowań</h2>
+
+        <div class="status-row">
+            <strong>Aktualne:</strong>
+            <span id="currentStatus">—</span>
+        </div>
+
+        <div class="status-row">
+            <strong>Następne:</strong>
+            <span id="nextStatus">—</span>
+        </div>
+    </div>
+
+    <div class="dropzone" id="dropzone">
+        <div class="icon">📂</div>
+        <div class="text">
+            Przeciągnij plik <span>schedule.xlsx</span> lub kliknij
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx">
+    </div>
+
+    <div class="actions">
+        <a href="/download" class="download-btn">
+            ⬇️ Pobierz aktualny harmonogram
+        </a>
+    </div>
+
+    <div id="statusMessage" class="status hidden"></div>
+</div>
+
+<div class="watermark">
+    made by Ignacy Chrobak
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

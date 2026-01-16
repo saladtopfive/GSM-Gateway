@@ -2,104 +2,172 @@
 import serial
 import time
 import datetime
-from openpyxl import load_workbook
 import pytz
 import os
+import logging
+import sys
+from openpyxl import load_workbook
 
-# ==== CONFIG ====
-PORT = "/dev/ttyUSB2"
+# ===================== CONFIG =====================
+
+PORT = "/dev/serial/by-id/usb-SimTech__Incorporated_SimTech__Incorporated_0123456789ABCDEF-if04-port0"
 BAUD = 115200
-XLSX_FILE = "schedule.xlsx"
+CHECK_INTERVAL = 60  # seconds
 LOCAL_TZ = pytz.timezone("Europe/Warsaw")
 
-# ==== HELP FUNCTIONS  ====
-def send_command(ser, cmd, delay=1):
-    """Wysyła komendę AT i zwraca odpowiedź modemu"""
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+XLSX_FILE = os.path.join(SCRIPT_DIR, "schedule.xlsx")
+
+# ===================== LOGGING =====================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
+)
+
+log = logging.getLogger("gsm-forwarder")
+
+# ===================== GSM HELPERS =====================
+
+def open_modem():
+    """Próbuje otworzyć port modemu (retry-safe)"""
+    try:
+        ser = serial.Serial(PORT, BAUD, timeout=2)
+        log.info("Połączono z modemem: %s", PORT)
+        return ser
+    except Exception as e:
+        log.error("Nie można otworzyć portu %s: %s", PORT, e)
+        return None
+
+
+def send_at(ser, cmd, delay=0.5):
+    """Wysyła komendę AT i zwraca odpowiedź"""
     ser.write((cmd + "\r").encode())
     time.sleep(delay)
     resp = ser.read_all().decode(errors="ignore").strip()
-    print(f"> {cmd}\n{resp}\n")
+    log.info("AT> %s | %s", cmd, resp)
     return resp
 
-def set_forward(ser, number):
-    """Ustawienie przekierowania bezwarunkowego (voice)"""
-    return send_command(ser, f'AT+CCFC=0,3,"{number}",145')
 
-def disable_forward(ser):
-    """Wyłączenie przekierowania"""
-    return send_command(ser, 'AT+CCFC=0,0')
+def enable_forwarding(ser, number):
+    log.info("Ustawiam przekierowanie na %s", number)
+    send_at(ser, f'AT+CCFC=0,3,"{number}",145')
 
-def read_schedule(path):
-    """Wczytuje plik XLSX i zwraca listę rekordów"""
-    if not os.path.exists(path):
-        print(f"❌ Plik {path} nie istnieje.")
+
+def disable_forwarding(ser):
+    log.info("Wyłączam przekierowanie")
+    send_at(ser, "AT+CCFC=0,0")
+
+# ===================== XLSX LOGIC =====================
+
+def load_schedule():
+    """Czyta XLSX i zwraca listę (start, end, number)"""
+    if not os.path.exists(XLSX_FILE):
+        log.warning("Brak pliku XLSX: %s", XLSX_FILE)
         return []
 
-    try:
-        wb = load_workbook(path)
-        ws = wb.active
-        rows = []
-        for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            if not all(row[:5]):
-                continue
-            start_date, end_date, start_time, end_time, number = row
-            try:
-                start_dt = datetime.datetime.combine(start_date, start_time)
-                end_dt = datetime.datetime.combine(end_date, end_time)
-                start_dt = LOCAL_TZ.localize(start_dt)
-                end_dt = LOCAL_TZ.localize(end_dt)
-                rows.append((start_dt, end_dt, str(number)))
-            except Exception as e:
-                print(f"⚠️ Błąd w wierszu {i}: {e}")
-        return rows
-    except Exception as e:
-        print(f"❌ Błąd odczytu XLSX: {e}")
-        return []
+    wb = load_workbook(XLSX_FILE)
+    ws = wb.active
+    schedule = []
+
+    for row_idx in range(2, ws.max_row + 1):
+        values = [ws[f"{c}{row_idx}"].value for c in ("A", "B", "C", "D", "E")]
+
+        if all(v is None for v in values):
+            continue
+
+        if any(v is None for v in values):
+            log.error("Niekompletny wiersz %d w XLSX – ignoruję", row_idx)
+            continue
+
+        start_date, end_date, start_time, end_time, number = values
+
+        try:
+            start_dt = LOCAL_TZ.localize(
+                datetime.datetime.combine(start_date, start_time)
+            )
+            end_dt = LOCAL_TZ.localize(
+                datetime.datetime.combine(end_date, end_time)
+            )
+        except Exception as e:
+            log.error("Błąd daty/czasu w wierszu %d: %s", row_idx, e)
+            continue
+
+        number = str(number).strip()
+        if number.startswith(("'", "’", "‘")):
+            number = number[1:]
+
+        schedule.append((start_dt, end_dt, number))
+
+    return schedule
+
 
 def find_active_forward(schedule):
-    """Zwraca numer przekierowania, jeśli obecny czas mieści się w którymś przedziale"""
     now = datetime.datetime.now(LOCAL_TZ)
     for start, end, number in schedule:
         if start <= now <= end:
             return number, start, end
     return None, None, None
 
-# ==== MAIN ====
+# ===================== MAIN LOOP =====================
+
 def main():
-    print("🔌 Łączenie z modemem...")
-    ser = serial.Serial(PORT, BAUD, timeout=2)
+    log.info("Start GSM Forwarder")
 
-    send_command(ser, "AT", 0.5)
-    send_command(ser, "ATE0", 0.2)
-    send_command(ser, "AT+CLIP=1", 0.2)
-
+    ser = None
     last_number = None
 
-    try:
-        while True:
-            schedule = read_schedule(XLSX_FILE)
-            number, start, end = find_active_forward(schedule)
-            now = datetime.datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-            if number and number != last_number:
-                print(f"🕓 {now} | Aktywne przekierowanie: {number} ({start} → {end})")
-                set_forward(ser, number)
-                last_number = number
-            elif not number and last_number is not None:
-                print(f"🕓 {now} | Brak aktywnego przedziału — wyłączam przekierowanie.")
-                disable_forward(ser)
-                last_number = None
+    while True:
+        # --- modem ---
+        if ser is None or not ser.is_open:
+            ser = open_modem()
+            if ser:
+                send_at(ser, "AT")
+                send_at(ser, "ATE0")
+                send_at(ser, "AT+CLIP=1")
             else:
-                status = f"{number}" if number else "Brak"
-                print(f"🕓 {now} | Aktualne przekierowanie: {status}")
+                time.sleep(5)
+                continue
 
-            time.sleep(60)
+        # --- schedule ---
+        schedule = load_schedule()
+        number, start, end = find_active_forward(schedule)
 
-    except KeyboardInterrupt:
-        print("⛔ Wyłączam przekierowanie...")
-        disable_forward(ser)
-        ser.close()
-        print("✅ Zakończono.")
+        now_str = datetime.datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+        try:
+            if number and number != last_number:
+                log.info(
+                    "%s | Aktywne przekierowanie: %s (%s → %s)",
+                    now_str, number, start, end
+                )
+                enable_forwarding(ser, number)
+                last_number = number
+
+            elif not number and last_number is not None:
+                log.info("%s | Brak aktywnego przedziału", now_str)
+                disable_forwarding(ser)
+                last_number = None
+
+            else:
+                log.info(
+                    "%s | Aktualne przekierowanie: %s",
+                    now_str, number if number else "Brak"
+                )
+
+        except Exception as e:
+            log.error("Błąd komunikacji z modemem: %s", e)
+            try:
+                ser.close()
+            except Exception:
+                pass
+            ser = None
+
+        time.sleep(CHECK_INTERVAL)
+
+# ===================== ENTRY =====================
 
 if __name__ == "__main__":
     main()
