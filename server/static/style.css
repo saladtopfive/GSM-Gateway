@@ -10,6 +10,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    color: #333;
 }
 
 .container {
@@ -17,60 +18,108 @@ body {
     padding: 32px;
     width: 420px;
     border-radius: 16px;
-    box-shadow: 0 20px 40px rgba(0,0,0,.25);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
     text-align: center;
 }
 
 h1 {
     margin-top: 0;
+    font-size: 22px;
 }
 
 .subtitle {
     color: #666;
     font-size: 14px;
-    margin-bottom: 20px;
+    margin-bottom: 18px;
 }
 
-/* ===== STATUS ===== */
-
-.status-panel {
-    background: #f4f7ff;
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 20px;
+/* ===== STATUS CARD ===== */
+.status-card {
+    background: linear-gradient(135deg, #f5f8ff, #eef3ff);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 22px;
+    box-shadow:
+        0 8px 20px rgba(42, 82, 152, 0.18),
+        inset 0 1px 0 rgba(255,255,255,0.9);
+    text-align: left;
 }
 
-.status-row {
-    font-size: 14px;
-    margin: 6px 0;
+.status-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.status-label {
+    font-size: 12px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #5a6f99;
+    font-weight: 600;
+}
+
+.status-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1e3c72;
+}
+
+.status-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, #cfd9f3, transparent);
+    margin: 14px 0;
+}
+
+/* ===== ACTIVE DOT ===== */
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-left: 8px;
+    border-radius: 50%;
+    background: #2ecc71;
+    box-shadow: 0 0 6px rgba(46, 204, 113, 0.9);
+    animation: pulse 1.8s infinite;
+    vertical-align: middle;
+}
+
+@keyframes pulse {
+    0%   { box-shadow: 0 0 6px rgba(46,204,113,.9); }
+    50%  { box-shadow: 0 0 12px rgba(46,204,113,1); }
+    100% { box-shadow: 0 0 6px rgba(46,204,113,.9); }
 }
 
 /* ===== DROPZONE ===== */
-
 .dropzone {
     border: 2px dashed #bbb;
     border-radius: 14px;
     padding: 40px 20px;
     cursor: pointer;
-    transition: .3s;
+    transition: all 0.3s ease;
 }
 
 .dropzone:hover,
 .dropzone.dragover {
     border-color: #2a5298;
-    background: #eef3ff;
+    background: #f0f6ff;
+}
+
+.dropzone .icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.dropzone .text span {
+    color: #2a5298;
+    font-weight: 500;
 }
 
 .dropzone input {
     display: none;
 }
 
-.icon {
-    font-size: 48px;
-}
-
 /* ===== ACTIONS ===== */
-
 .actions {
     margin-top: 18px;
 }
@@ -93,13 +142,13 @@ h1 {
     box-shadow: 0 6px 14px rgba(0,0,0,.15);
 }
 
-/* ===== STATUS MESSAGE ===== */
-
+/* ===== UPLOAD STATUS ===== */
 .status {
-    margin-top: 16px;
-    padding: 12px;
+    margin-top: 20px;
+    padding: 14px;
     border-radius: 10px;
     font-size: 14px;
+    animation: fadeIn 0.4s ease;
 }
 
 .status.success {
@@ -117,7 +166,6 @@ h1 {
 }
 
 /* ===== BRANDING ===== */
-
 .branding {
     position: fixed;
     top: 16px;
@@ -125,36 +173,42 @@ h1 {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 6px;
 }
 
 .corner-logo {
-    height: 80px;
-    border-radius: 18px;
+    height: 72px;
+    border-radius: 16px;
     background: white;
-    padding: 10px;
-    box-shadow: 0 6px 18px rgba(0,0,0,.25);
-    transition: transform .25s, box-shadow .25s;
+    padding: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
 .corner-logo:hover {
-    transform: scale(1.1);
-    box-shadow: 0 10px 26px rgba(0,0,0,.35);
+    transform: scale(1.08);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
 }
 
 .brand-text {
-    margin-top: 6px;
     font-size: 13px;
     letter-spacing: 2px;
-    color: rgba(255,255,255,.9);
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
 }
 
 /* ===== WATERMARK ===== */
-
 .watermark {
     position: fixed;
     bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
     font-size: 12px;
-    color: rgba(255,255,255,.5);
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* ===== ANIMATION ===== */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
 }

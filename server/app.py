@@ -9,8 +9,44 @@ import tempfile
 app = Flask(__name__)
 
 LOCAL_TZ = pytz.timezone("Europe/Warsaw")
+
 UPLOAD_PATH = "/home/kp_rpi_user/GSM-Gateway/stable-release/schedule.xlsx"
+PHONEBOOK_PATH = "/home/kp_rpi_user/GSM-Gateway/server/phonebook.txt"
+
 ALLOWED_EXTENSIONS = {"xlsx"}
+
+
+# ===== PHONEBOOK =====
+
+def normalize_number(n: str) -> str:
+    return "".join(c for c in n if c.isdigit())
+
+
+def load_phonebook():
+    phonebook = {}
+
+    if not os.path.exists(PHONEBOOK_PATH):
+        return phonebook
+
+    with open(PHONEBOOK_PATH, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or "|" not in line:
+                continue
+
+            raw_number, name = line.split("|", 1)
+            number = normalize_number(raw_number)
+
+            phonebook[number] = name.strip()
+
+    return phonebook
+
+
+
+def resolve_name(number: str) -> str:
+    phonebook = load_phonebook()
+    normalized = normalize_number(number)
+    return phonebook.get(normalized, number)
 
 
 # ===== HELPERS =====
@@ -31,7 +67,7 @@ def load_schedule():
         sd, ed, st, et, num = row
         start = LOCAL_TZ.localize(datetime.combine(sd, st))
         end = LOCAL_TZ.localize(datetime.combine(ed, et))
-        rows.append((start, end, str(num)))
+        rows.append((start, end, normalize_number(str(num))))
 
     return sorted(rows, key=lambda x: x[0])
 
@@ -60,10 +96,13 @@ def status():
     def fmt(entry):
         if not entry:
             return None
+
+        num, start, end = entry
         return {
-            "number": entry[0],
-            "start": entry[1].strftime("%Y-%m-%d %H:%M"),
-            "end": entry[2].strftime("%Y-%m-%d %H:%M")
+            "person": resolve_name(num),
+            "number": num,
+            "start": start.strftime("%Y-%m-%d %H:%M"),
+            "end": end.strftime("%Y-%m-%d %H:%M"),
         }
 
     return jsonify({
@@ -83,9 +122,7 @@ def upload():
         return jsonify({"error": "Nie wybrano pliku"}), 400
 
     if not allowed_file(file.filename):
-        return jsonify({
-            "error": "Dozwolony jest wyłącznie plik Excel (.xlsx)"
-        }), 400
+        return jsonify({"error": "Dozwolony jest wyłącznie plik Excel (.xlsx)"}), 400
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         file.save(tmp.name)
@@ -100,18 +137,13 @@ def upload():
 
         if headers != expected:
             os.unlink(tmp_path)
-            return jsonify({
-                "error": "Nieprawidłowa struktura pliku Excel"
-            }), 400
+            return jsonify({"error": "Nieprawidłowa struktura pliku Excel"}), 400
 
     except Exception:
         os.unlink(tmp_path)
-        return jsonify({
-            "error": "Nie udało się odczytać pliku Excel"
-        }), 400
+        return jsonify({"error": "Nie udało się odczytać pliku Excel"}), 400
 
     shutil.move(tmp_path, UPLOAD_PATH)
-
     return jsonify({"status": "ok"})
 
 

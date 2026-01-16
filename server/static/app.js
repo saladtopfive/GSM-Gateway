@@ -23,6 +23,7 @@ input.addEventListener("change", () => {
     uploadFile(input.files[0]);
 });
 
+/* ===== FILE UPLOAD ===== */
 
 function uploadFile(file) {
     if (!file) return;
@@ -38,42 +39,53 @@ function uploadFile(file) {
         method: "POST",
         body: form
     })
-    .then(async r => {
-        const data = await r.json();
-        if (!r.ok) throw data;
-        return data;
-    })
-    .then(() => {
-        statusBox.textContent = "✅ Plik został nadpisany pomyślnie";
-        statusBox.classList.add("success");
-        refreshStatus();
-    })
-    .catch(err => {
-        statusBox.textContent = "❌ " + (err.error || "Błąd wysyłania pliku");
-        statusBox.classList.add("error");
-    });
+        .then(async r => {
+            const data = await r.json();
+            if (!r.ok) throw data;
+            return data;
+        })
+        .then(() => {
+            statusBox.textContent = "✅ Plik został nadpisany pomyślnie";
+            statusBox.classList.add("success");
+            refreshStatus();
+        })
+        .catch(err => {
+            statusBox.textContent =
+                "❌ " + (err.error || "Błąd wysyłania pliku");
+            statusBox.classList.add("error");
+        });
 }
 
-
-// ===== STATUS =====
+/* ===== STATUS ===== */
 
 function refreshStatus() {
     fetch("/status")
         .then(r => r.json())
         .then(data => {
-            document.getElementById("currentStatus").textContent =
-                data.current
-                    ? `${data.current.number} (do ${data.current.end})`
-                    : "Brak aktywnego przekierowania";
+            const current = document.getElementById("currentStatus");
+            const next = document.getElementById("nextStatus");
+            const dot = document.getElementById("activeDot");
 
-            document.getElementById("nextStatus").textContent =
-                data.next
-                    ? `${data.next.number} (od ${data.next.start})`
-                    : "Brak kolejnych wpisów";
+            if (data.current) {
+                current.textContent =
+                    `${data.current.person} • do ${data.current.end}`;
+                dot.classList.remove("hidden");
+            } else {
+                current.textContent = "Brak aktywnego przekierowania";
+                dot.classList.add("hidden");
+            }
+
+            if (data.next) {
+                next.textContent =
+                    `${data.next.person} • od ${data.next.start}`;
+            } else {
+                next.textContent = "Brak kolejnych wpisów";
+            }
         })
         .catch(() => {
             document.getElementById("currentStatus").textContent = "Błąd odczytu";
             document.getElementById("nextStatus").textContent = "—";
+            document.getElementById("activeDot").classList.add("hidden");
         });
 }
 
