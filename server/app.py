@@ -5,6 +5,7 @@ import pytz
 import os
 import shutil
 import tempfile
+import re
 
 app = Flask(__name__)
 
@@ -15,12 +16,10 @@ PHONEBOOK_PATH = "/home/kp_rpi_user/GSM-Gateway/server/phonebook.txt"
 
 ALLOWED_EXTENSIONS = {"xlsx"}
 
+PHONE_REGEX = re.compile(r"^\+?48?\d{9}$")
+
 
 # ===== PHONEBOOK =====
-
-def normalize_number(n: str) -> str:
-    return "".join(c for c in n if c.isdigit())
-
 
 def load_phonebook():
     phonebook = {}
@@ -30,23 +29,16 @@ def load_phonebook():
 
     with open(PHONEBOOK_PATH, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.strip()
-            if not line or "|" not in line:
+            if "|" not in line:
                 continue
-
-            raw_number, name = line.split("|", 1)
-            number = normalize_number(raw_number)
-
-            phonebook[number] = name.strip()
+            number, name = line.split("|", 1)
+            phonebook[number.strip()] = name.strip()
 
     return phonebook
 
 
-
-def resolve_name(number: str) -> str:
-    phonebook = load_phonebook()
-    normalized = normalize_number(number)
-    return phonebook.get(normalized, number)
+def resolve_name(number):
+    return load_phonebook().get(number, number)
 
 
 # ===== HELPERS =====
@@ -55,19 +47,40 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def normalize_number(raw):
+    if raw is None:
+        return None
+
+    raw = str(raw).strip()
+
+    if not PHONE_REGEX.fullmatch(raw):
+        return None
+
+    return raw
+
+
 def load_schedule():
     wb = load_workbook(UPLOAD_PATH)
     ws = wb.active
     rows = []
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row or not all(row[:5]):
+    for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not row or len(row) < 5:
             continue
 
-        sd, ed, st, et, num = row
+        sd, ed, st, et, raw_num = row[:5]
+
+        if not all([sd, ed, st, et, raw_num]):
+            continue
+
+        number = normalize_number(raw_num)
+        if not number:
+            continue
+
         start = LOCAL_TZ.localize(datetime.combine(sd, st))
         end = LOCAL_TZ.localize(datetime.combine(ed, et))
-        rows.append((start, end, normalize_number(str(num))))
+
+        rows.append((start, end, number))
 
     return sorted(rows, key=lambda x: x[0])
 
@@ -96,7 +109,6 @@ def status():
     def fmt(entry):
         if not entry:
             return None
-
         num, start, end = entry
         return {
             "person": resolve_name(num),
@@ -114,15 +126,12 @@ def status():
 @app.route("/upload", methods=["POST"])
 def upload():
     if "file" not in request.files:
-        return jsonify({"error": "Brak pliku w żądaniu"}), 400
+        return jsonify({"error": "Brak pliku"}), 400
 
     file = request.files["file"]
 
-    if file.filename == "":
-        return jsonify({"error": "Nie wybrano pliku"}), 400
-
     if not allowed_file(file.filename):
-        return jsonify({"error": "Dozwolony jest wyłącznie plik Excel (.xlsx)"}), 400
+        return jsonify({"error": "Dozwolony jest tylko plik .xlsx"}), 400
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         file.save(tmp.name)
@@ -131,17 +140,15 @@ def upload():
     try:
         wb = load_workbook(tmp_path)
         ws = wb.active
-
         headers = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
         expected = ["start_date", "end_date", "start_time", "end_time", "number"]
 
-        if headers != expected:
-            os.unlink(tmp_path)
-            return jsonify({"error": "Nieprawidłowa struktura pliku Excel"}), 400
+        if headers[:5] != expected:
+            raise ValueError("Zła struktura nagłówków")
 
     except Exception:
         os.unlink(tmp_path)
-        return jsonify({"error": "Nie udało się odczytać pliku Excel"}), 400
+        return jsonify({"error": "Nieprawidłowy plik Excel"}), 400
 
     shutil.move(tmp_path, UPLOAD_PATH)
     return jsonify({"status": "ok"})
@@ -149,14 +156,7 @@ def upload():
 
 @app.route("/download")
 def download():
-    if not os.path.exists(UPLOAD_PATH):
-        return jsonify({"error": "Brak pliku harmonogramu"}), 404
-
-    return send_file(
-        UPLOAD_PATH,
-        as_attachment=True,
-        download_name="schedule.xlsx"
-    )
+    return send_file(UPLOAD_PATH, as_attachment=True, download_name="schedule.xlsx")
 
 
 if __name__ == "__main__":

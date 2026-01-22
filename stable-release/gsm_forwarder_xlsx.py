@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 import serial
 import time
@@ -6,6 +7,7 @@ import pytz
 import os
 import logging
 import sys
+import re
 from openpyxl import load_workbook
 
 # ===================== CONFIG =====================
@@ -17,6 +19,9 @@ LOCAL_TZ = pytz.timezone("Europe/Warsaw")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 XLSX_FILE = os.path.join(SCRIPT_DIR, "schedule.xlsx")
+
+# Polska: 9 cyfr (+48 opcjonalnie)
+PHONE_REGEX = re.compile(r"^\+?48?\d{9}$")
 
 # ===================== LOGGING =====================
 
@@ -60,6 +65,29 @@ def disable_forwarding(ser):
     log.info("Wyłączam przekierowanie")
     send_at(ser, "AT+CCFC=0,0")
 
+# ===================== VALIDATION =====================
+
+def normalize_number(raw):
+    """
+    Czyści i waliduje numer telefonu.
+    Zwraca numer jako string albo None.
+    """
+    if raw is None:
+        return None
+
+    number = str(raw).strip()
+
+    # Excel negacja -> '
+    if number.startswith(("'", "’", "‘")):
+        number = number[1:]
+
+    # HARD BLOCK: tylko cyfry i opcjonalny +
+    if not PHONE_REGEX.fullmatch(number):
+        log.error("❌ Odrzucono nieprawidłowy numer: %s", number)
+        return None
+
+    return number
+
 # ===================== XLSX LOGIC =====================
 
 def load_schedule():
@@ -75,14 +103,16 @@ def load_schedule():
     for row_idx in range(2, ws.max_row + 1):
         values = [ws[f"{c}{row_idx}"].value for c in ("A", "B", "C", "D", "E")]
 
+        # całkowicie pusty wiersz
         if all(v is None for v in values):
             continue
 
+        # niekompletny
         if any(v is None for v in values):
-            log.error("Niekompletny wiersz %d w XLSX – ignoruję", row_idx)
+            log.error("Niekompletny wiersz %d – pomijam", row_idx)
             continue
 
-        start_date, end_date, start_time, end_time, number = values
+        start_date, end_date, start_time, end_time, raw_number = values
 
         try:
             start_dt = LOCAL_TZ.localize(
@@ -95,9 +125,10 @@ def load_schedule():
             log.error("Błąd daty/czasu w wierszu %d: %s", row_idx, e)
             continue
 
-        number = str(number).strip()
-        if number.startswith(("'", "’", "‘")):
-            number = number[1:]
+        number = normalize_number(raw_number)
+        if not number:
+            log.error("Wiersz %d: numer odrzucony", row_idx)
+            continue
 
         schedule.append((start_dt, end_dt, number))
 
@@ -147,7 +178,7 @@ def main():
                 last_number = number
 
             elif not number and last_number is not None:
-                log.info("%s | Brak aktywnego przedziału", now_str)
+                log.info("%s | Brak aktywnego przedziału – wyłączam", now_str)
                 disable_forwarding(ser)
                 last_number = None
 
