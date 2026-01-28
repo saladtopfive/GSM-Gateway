@@ -13,13 +13,14 @@ from openpyxl import load_workbook
 
 PORT = "/dev/serial/by-id/usb-SimTech__Incorporated_SimTech__Incorporated_0123456789ABCDEF-if04-port0"
 BAUD = 115200
-CHECK_INTERVAL = 60
+CHECK_INTERVAL = 60  # seconds
 LOCAL_TZ = pytz.timezone("Europe/Warsaw")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 XLSX_FILE = os.path.join(SCRIPT_DIR, "schedule.xlsx")
 
-PHONE_REGEX = re.compile(r"^\+48\d{9}$")
+# polski numer: +48XXXXXXXXX albo XXXXXXXXX
+PHONE_REGEX = re.compile(r"^(?:\+48)?\d{9}$")
 
 # ===================== LOGGING =====================
 
@@ -32,7 +33,7 @@ logging.basicConfig(
 
 log = logging.getLogger("gsm-forwarder")
 
-# ===================== GSM =====================
+# ===================== GSM HELPERS =====================
 
 def open_modem():
     try:
@@ -40,7 +41,7 @@ def open_modem():
         log.info("Połączono z modemem: %s", PORT)
         return ser
     except Exception as e:
-        log.error("Nie można otworzyć modemu: %s", e)
+        log.error("Nie można otworzyć portu %s: %s", PORT, e)
         return None
 
 
@@ -61,46 +62,76 @@ def disable_forwarding(ser):
     log.info("Wyłączam przekierowanie")
     send_at(ser, "AT+CCFC=0,0")
 
-# ===================== XLSX =====================
+# ===================== XLSX HELPERS =====================
+
+def normalize_number(value):
+    if value is None:
+        return None
+
+    number = str(value).strip().replace(" ", "")
+    if number.startswith(("'", "’", "‘")):
+        number = number[1:]
+
+    if PHONE_REGEX.fullmatch(number):
+        return number
+
+    log.error("❌ Odrzucono nieprawidłowy numer: %s", value)
+    return None
+
+
+def load_contacts(wb):
+    phonebook = {}
+
+    if "contacts" not in wb.sheetnames:
+        log.warning("Brak arkusza 'contacts'")
+        return phonebook
+
+    ws = wb["contacts"]
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or len(row) < 2:
+            continue
+
+        name, number = row[0], row[1]
+        if not name or not number:
+            continue
+
+        phonebook[str(name).strip()] = str(number).strip()
+
+    return phonebook
+
 
 def load_schedule():
     if not os.path.exists(XLSX_FILE):
-        log.error("Brak pliku schedule.xlsx")
+        log.warning("Brak pliku XLSX: %s", XLSX_FILE)
         return []
 
     wb = load_workbook(XLSX_FILE, data_only=True)
+    log.info("Dostępne arkusze XLSX: %s", wb.sheetnames)
 
-    if "schedule" not in wb.sheetnames:
-        log.error("Brak arkusza 'schedule'")
-        return []
+    schedule_ws = wb[wb.sheetnames[0]]
+    phonebook = load_contacts(wb)
 
-    ws = wb["schedule"]
     schedule = []
 
-    for row_idx in range(2, ws.max_row + 1):
-        row = [
-            ws[f"A{row_idx}"].value,
-            ws[f"B{row_idx}"].value,
-            ws[f"C{row_idx}"].value,
-            ws[f"D{row_idx}"].value,
-            ws[f"E{row_idx}"].value,
-            ws[f"F{row_idx}"].value,
-        ]
-
-        if all(v is None for v in row):
+    for idx, row in enumerate(
+        schedule_ws.iter_rows(min_row=2, values_only=True), start=2
+    ):
+        if not row or len(row) < 6:
             continue
 
-        if any(v is None for v in row[:6]):
-            log.error("Wiersz %d: niekompletne dane – pomijam", row_idx)
+        start_date, end_date, start_time, end_time, name, raw_number = row[:6]
+
+        if not all([start_date, end_date, start_time, end_time]):
             continue
 
-        start_date, end_date, start_time, end_time, name, number = row
+        # numer z kolumny albo z contacts
+        number = normalize_number(raw_number)
+        if not number and name in phonebook:
+            number = normalize_number(phonebook[name])
 
-        number = str(number).strip()
-
-        if not PHONE_REGEX.match(number):
-            log.error("❌ Odrzucono nieprawidłowy numer: %s", number)
-            log.error("Wiersz %d: numer odrzucony", row_idx)
+        if not number:
+            log.error("Wiersz %d: numer odrzucony", idx)
             continue
 
         try:
@@ -111,27 +142,22 @@ def load_schedule():
                 datetime.datetime.combine(end_date, end_time)
             )
         except Exception as e:
-            log.error("Wiersz %d: błąd daty/czasu: %s", row_idx, e)
+            log.error("Wiersz %d: błąd daty/czasu: %s", idx, e)
             continue
 
-        schedule.append((start_dt, end_dt, number, name))
+        schedule.append((start_dt, end_dt, number))
 
     return schedule
 
 
-def find_active(schedule):
+def find_active_forward(schedule):
     now = datetime.datetime.now(LOCAL_TZ)
-    next_entry = None
-
-    for start, end, number, name in sorted(schedule, key=lambda x: x[0]):
+    for start, end, number in schedule:
         if start <= now <= end:
-            return ("current", start, end, number, name)
-        if start > now and next_entry is None:
-            next_entry = ("next", start, end, number, name)
+            return number, start, end
+    return None, None, None
 
-    return next_entry
-
-# ===================== MAIN =====================
+# ===================== MAIN LOOP =====================
 
 def main():
     log.info("Start GSM Forwarder")
@@ -140,6 +166,7 @@ def main():
     last_number = None
 
     while True:
+        # --- modem ---
         if ser is None or not ser.is_open:
             ser = open_modem()
             if ser:
@@ -150,31 +177,31 @@ def main():
                 time.sleep(5)
                 continue
 
+        # --- schedule ---
         schedule = load_schedule()
-        result = find_active(schedule)
+        number, start, end = find_active_forward(schedule)
 
         now_str = datetime.datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
         try:
-            if result and result[0] == "current":
-                _, start, end, number, name = result
-                if number != last_number:
-                    log.info(
-                        "%s | Aktywne przekierowanie: %s (%s → %s)",
-                        now_str, name, start, end
-                    )
-                    enable_forwarding(ser, number)
-                    last_number = number
-                else:
-                    log.info("%s | Aktualne przekierowanie: %s", now_str, name)
+            if number and number != last_number:
+                log.info(
+                    "%s | Aktywne przekierowanie: %s (%s → %s)",
+                    now_str, number, start, end
+                )
+                enable_forwarding(ser, number)
+                last_number = number
+
+            elif not number and last_number is not None:
+                log.info("%s | Brak aktywnego przedziału – wyłączam", now_str)
+                disable_forwarding(ser)
+                last_number = None
 
             else:
-                if last_number is not None:
-                    log.info("%s | Brak aktywnego przedziału – wyłączam", now_str)
-                    disable_forwarding(ser)
-                    last_number = None
-                else:
-                    log.info("%s | Aktualne przekierowanie: Brak", now_str)
+                log.info(
+                    "%s | Aktualne przekierowanie: %s",
+                    now_str, number if number else "Brak"
+                )
 
         except Exception as e:
             log.error("Błąd komunikacji z modemem: %s", e)
@@ -186,6 +213,7 @@ def main():
 
         time.sleep(CHECK_INTERVAL)
 
+# ===================== ENTRY =====================
 
 if __name__ == "__main__":
     main()
