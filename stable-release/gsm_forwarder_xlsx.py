@@ -75,6 +75,19 @@ def gsm_sanitize(text):
     return text
 
 
+def is_ucs2_hex(s):
+    if len(s) % 4 != 0:
+        return False
+    return all(c in "0123456789ABCDEFabcdef" for c in s)
+
+
+def decode_ucs2(hex_string):
+    try:
+        return bytes.fromhex(hex_string).decode("utf-16-be")
+    except:
+        return hex_string
+
+
 def send_sms(ser, number, text):
     try:
         clean = gsm_sanitize(text)
@@ -143,13 +156,15 @@ def process_all_sms(ser, forward_number):
 
         sender = sender_match.group(1)
 
+        if is_ucs2_hex(body):
+            body = decode_ucs2(body)
+
         log.info("SMS idx=%s status=%s od %s: %s", index, status, sender, body)
 
         if not forward_number:
-            log.info("Brak aktywnego przekierowania - SMS pozostaje")
             continue
 
-        forward_text = f"FWD from {sender}:\n{body}"
+        forward_text = f"{sender}:\n{body}"
         success = send_sms(ser, forward_number, forward_text)
 
         if success:
@@ -211,7 +226,8 @@ def main():
                 send_at(ser, "ATE0")
                 send_at(ser, "AT+CLIP=1")
                 send_at(ser, "AT+CMGF=1")
-                send_at(ser, 'AT+CPMS="ME","ME","ME"')
+                send_at(ser, 'AT+CSCS="GSM"', log_cmd=True)
+                send_at(ser, 'AT+CPMS="ME","ME","ME"', log_cmd=True)
             else:
                 time.sleep(5)
                 continue
