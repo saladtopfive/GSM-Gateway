@@ -91,39 +91,55 @@ def decode_ucs2(hex_string):
 def send_sms(ser, number, text):
     try:
         clean = gsm_sanitize(text)
-        log.info("Wysylam SMS na %s", number)
 
-        ser.write(f'AT+CMGS="{number}"\r'.encode())
+        parts = []
+        max_len = 150
 
-        buffer = ""
-        start = time.time()
-        while ">" not in buffer:
-            buffer += ser.read_all().decode(errors="ignore")
-            if time.time() - start > 5:
-                log.error("Timeout oczekiwania na >")
-                return False
-            time.sleep(0.1)
+        while len(clean) > max_len:
+            parts.append(clean[:max_len])
+            clean = clean[max_len:]
+        parts.append(clean)
 
-        ser.write(clean.encode("ascii", errors="ignore") + b"\x1A")
+        for idx, part in enumerate(parts, start=1):
 
-        response = ""
-        start = time.time()
-        while True:
-            response += ser.read_all().decode(errors="ignore")
+            if len(parts) > 1:
+                part = f"({idx}/{len(parts)}) {part}"
 
-            if "+CMGS:" in response and "OK" in response:
-                log.info("SMS wyslany poprawnie")
-                return True
+            log.info("Wysylam SMS czesc %d/%d na %s", idx, len(parts), number)
 
-            if "ERROR" in response or "+CMS ERROR" in response:
-                log.error("Blad wysylki SMS: %s", response.strip())
-                return False
+            ser.write(f'AT+CMGS="{number}"\r'.encode())
 
-            if time.time() - start > 15:
-                log.error("Timeout potwierdzenia SMS")
-                return False
+            buffer = ""
+            start = time.time()
+            while ">" not in buffer:
+                buffer += ser.read_all().decode(errors="ignore")
+                if time.time() - start > 5:
+                    log.error("Timeout oczekiwania na >")
+                    return False
+                time.sleep(0.1)
 
-            time.sleep(0.2)
+            ser.write(part.encode("ascii", errors="ignore") + b"\x1A")
+
+            response = ""
+            start = time.time()
+            while True:
+                response += ser.read_all().decode(errors="ignore")
+
+                if "+CMGS:" in response and "OK" in response:
+                    break
+
+                if "ERROR" in response or "+CMS ERROR" in response:
+                    log.error("Blad wysylki SMS: %s", response.strip())
+                    return False
+
+                if time.time() - start > 15:
+                    log.error("Timeout potwierdzenia SMS")
+                    return False
+
+                time.sleep(0.2)
+
+        log.info("SMS wyslany poprawnie")
+        return True
 
     except Exception as e:
         log.error("Wyjatek przy wysylaniu SMS: %s", e)
@@ -150,11 +166,14 @@ def process_all_sms(ser, forward_number):
         index = parts[0].strip()
         status = parts[1].replace('"', '').strip()
 
-        sender_match = re.search(r'"(\+?\d+)"', header)
+        sender_match = re.search(r'"([^"]+)"', header)
         if not sender_match:
             continue
 
         sender = sender_match.group(1)
+
+        if is_ucs2_hex(sender):
+            sender = decode_ucs2(sender)
 
         if is_ucs2_hex(body):
             body = decode_ucs2(body)
@@ -164,7 +183,7 @@ def process_all_sms(ser, forward_number):
         if not forward_number:
             continue
 
-        forward_text = f"{sender}:\n{body}"
+        forward_text = f"FWD from {sender}:\n{body}"
         success = send_sms(ser, forward_number, forward_text)
 
         if success:
