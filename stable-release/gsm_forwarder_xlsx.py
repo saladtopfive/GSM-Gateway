@@ -42,23 +42,77 @@ def open_modem():
         return None
 
 
-def send_at(ser, cmd, delay=0.3, log_cmd=False):
-    ser.write((cmd + "\r").encode())
-    time.sleep(delay)
-    resp = ser.read_all().decode(errors="ignore").strip()
-    if log_cmd:
-        log.info("AT> %s | %s", cmd, resp)
-    return resp
+def send_at(ser, cmd, timeout=10, log_cmd=False):
+    try:
+        ser.reset_input_buffer()
+    except:
+        pass
 
+    ser.write((cmd + "\r").encode())
+
+    response = ""
+    start = time.time()
+
+    while True:
+        chunk = ser.read_all().decode(errors="ignore")
+
+        if chunk:
+            response += chunk
+
+        if (
+            "\r\nOK\r\n" in response
+            or response.strip().endswith("OK")
+        ):
+            break
+
+        if (
+            "ERROR" in response
+            or "+CME ERROR" in response
+            or "+CMS ERROR" in response
+        ):
+            break
+
+        if time.time() - start > timeout:
+            break
+
+        time.sleep(0.1)
+
+    response = response.strip()
+
+    if log_cmd:
+        log.info("AT> %s | %s", cmd, response)
+
+    return response
 
 def enable_forwarding(ser, number):
     log.info("Ustawiam przekierowanie rozmow na %s", number)
-    send_at(ser, f'AT+CCFC=0,3,"{number}",145', log_cmd=True)
 
+    resp = send_at(
+        ser,
+        f'AT+CCFC=0,3,"{number}",145',
+        timeout=15,
+        log_cmd=True
+    )
+
+    if "OK" not in resp:
+        raise RuntimeError(
+            f"Nie udalo sie ustawic przekierowania: {repr(resp)}"
+        )
 
 def disable_forwarding(ser):
     log.info("Wylaczam przekierowanie rozmow")
-    send_at(ser, "AT+CCFC=0,0", log_cmd=True)
+
+    resp = send_at(
+        ser,
+        "AT+CCFC=0,0",
+        timeout=15,
+        log_cmd=True
+    )
+
+    if "OK" not in resp:
+        raise RuntimeError(
+            f"Nie udalo sie wylaczyc przekierowania: {repr(resp)}"
+        )
 
 
 def gsm_sanitize(text):
